@@ -1,0 +1,80 @@
+name: embedding-generator
+description: |
+  Generates dense vector embeddings from text chunks produced by the
+  document-chunker component using a sentence-transformer model.
+  Supports batch processing, GPU acceleration, checkpointing, and
+  memory-efficient processing for large datasets.
+
+  Outputs:
+    • embeddings.npy  – NumPy array of shape (N, D)
+    • metadata.json   – per-chunk metadata aligned with the array rows
+    • embeddings.json – combined artifact with embeddings + metadata
+    • metrics.json    – run metrics (speed, dimensions, timing)
+
+inputs:
+  - name: chunks_path
+    type: String
+    description: >
+      Path to the JSON file produced by the document-chunker component.
+      Expected schema: {"chunks": [{"chunk_id", "text", "tokens", "metadata"}]}
+  - name: model_name
+    type: String
+    description: >
+      Hugging Face sentence-transformer model name.
+      Must be compatible with the sentence-transformers library.
+    default: "sentence-transformers/all-MiniLM-L6-v2"
+  - name: batch_size
+    type: Integer
+    description: Number of texts to encode per forward pass.
+    default: "32"
+  - name: device
+    type: String
+    description: >
+      Compute device for inference.  "cpu" or "cuda".
+      Falls back to CPU if CUDA is requested but unavailable.
+    default: "cpu"
+  - name: output_dir
+    type: String
+    description: Directory where output files will be written.
+    default: /tmp/outputs
+
+outputs:
+  - name: embeddings
+    type: Artifact
+    description: >
+      Directory containing embeddings.npy, metadata.json, and optionally
+      embeddings.json with the combined output.
+  - name: metrics
+    type: Metrics
+    description: >
+      JSON file with generation metrics: total_embeddings, embedding_dimensions,
+      model_name, device, batch_size, embeddings_per_second, total_time_seconds.
+
+implementation:
+  container:
+    image: embedding-generator:latest
+    command:
+      - python
+      - component.py
+    args:
+      - --chunks-path
+      - {inputValue: chunks_path}
+      - --model-name
+      - {inputValue: model_name}
+      - --batch-size
+      - {inputValue: batch_size}
+      - --device
+      - {inputValue: device}
+      - --output-dir
+      - {inputValue: output_dir}
+    fileOutputs:
+      embeddings: /tmp/outputs/embeddings.npy
+      metrics: /tmp/outputs/metrics.json
+
+metadata:
+  labels:
+    app: embedding-generator
+    component: feature-extraction
+  annotations:
+    author: docs-agent
+    version: "1.0.0"
