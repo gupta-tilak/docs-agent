@@ -1,0 +1,67 @@
+# Test InferenceService: sklearn Iris classifier
+# Deploys a pre-trained sklearn model to verify KServe is working.
+#
+# Usage:
+#   kubectl create namespace kserve-test
+#   kubectl apply -f configs/test-inference-service.yaml -n kserve-test
+#
+# Test:
+#   kubectl port-forward -n kourier-system svc/kourier 8081:80 &
+#   curl -v \
+#     -H "Host: sklearn-iris.kserve-test.example.com" \
+#     -H "Content-Type: application/json" \
+#     -d '{"instances": [[6.8, 2.8, 4.8, 1.4], [6.0, 3.4, 4.5, 1.6]]}' \
+#     http://localhost:8081/v1/models/sklearn-iris:predict
+#
+# Expected response:
+#   {"predictions": [1, 1]}
+#
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: sklearn-iris
+  labels:
+    app: sklearn-iris
+    env: test
+  annotations:
+    sidecar.istio.io/inject: "false"
+spec:
+  predictor:
+    # Scale-to-zero: allow 0 replicas when idle
+    minReplicas: 0
+    maxReplicas: 2
+
+    # Scaled object timeout: pod stays up 60s after last request
+    scaleTarget: 1
+    scaleMetric: concurrency
+
+    model:
+      modelFormat:
+        name: sklearn
+      # Official KServe sklearn example model (Iris classifier)
+      storageUri: "gs://kfserving-examples/models/sklearn/1.0/model"
+
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+
+      # Readiness / liveness probes (optional, KServe adds defaults)
+      # Uncomment for custom probe settings:
+      # readinessProbe:
+      #   httpGet:
+      #     path: /v1/models/sklearn-iris
+      #     port: 8080
+      #   initialDelaySeconds: 10
+      #   periodSeconds: 5
+
+    # GPU node affinity (uncomment when GPU nodes are available)
+    # nodeSelector:
+    #   accelerator: nvidia-gpu
+    # tolerations:
+    #   - key: "nvidia.com/gpu"
+    #     operator: "Exists"
+    #     effect: "NoSchedule"

@@ -1,0 +1,100 @@
+# Kind cluster configuration for running Kubeflow locally
+# Kubernetes v1.29 with 1 control plane + 2 worker nodes
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kubeflow-local
+
+# Use Kubernetes 1.29
+nodes:
+  # --- Control Plane Node ---
+  - role: control-plane
+    image: kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # Kubeflow Dashboard (Istio Ingress Gateway)
+      - containerPort: 80
+        hostPort: 8080
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+      # KServe inference endpoint
+      - containerPort: 8081
+        hostPort: 8081
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+      # MLflow tracking server (optional)
+      - containerPort: 5000
+        hostPort: 5000
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+    extraMounts:
+      - hostPath: ./data
+        containerPath: /mnt/data
+        readOnly: false
+        selinuxRelabel: false
+      - hostPath: ./models
+        containerPath: /mnt/models
+        readOnly: false
+        selinuxRelabel: false
+
+  # --- Worker Node 1 ---
+  - role: worker
+    image: kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            system-reserved: "memory=512Mi"
+            kube-reserved: "memory=512Mi"
+    extraMounts:
+      - hostPath: ./data
+        containerPath: /mnt/data
+        readOnly: false
+        selinuxRelabel: false
+      - hostPath: ./models
+        containerPath: /mnt/models
+        readOnly: false
+        selinuxRelabel: false
+
+  # --- Worker Node 2 ---
+  - role: worker
+    image: kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            system-reserved: "memory=512Mi"
+            kube-reserved: "memory=512Mi"
+    extraMounts:
+      - hostPath: ./data
+        containerPath: /mnt/data
+        readOnly: false
+        selinuxRelabel: false
+      - hostPath: ./models
+        containerPath: /mnt/models
+        readOnly: false
+        selinuxRelabel: false
+
+# Feature gates required for Kubeflow components
+featureGates:
+  # Graceful node shutdown support
+  GracefulNodeShutdown: true
+  # Topology-aware scheduling (useful for GPU/resource-aware workloads)
+  TopologyAwareHints: true
+
+# Networking configuration
+networking:
+  # Use kindnet as the CNI (default)
+  disableDefaultCNI: false
+  # Pod subnet
+  podSubnet: "10.244.0.0/16"
+  # Service subnet
+  serviceSubnet: "10.96.0.0/16"
+  # Required for Istio sidecar injection
+  kubeProxyMode: "iptables"
