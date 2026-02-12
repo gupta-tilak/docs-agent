@@ -1,0 +1,53 @@
+name: kubeflow-docs-crawler
+description: |
+  Crawls Kubeflow documentation from GitHub repositories and kubeflow.org.
+  Clones kubeflow/website, kubeflow/manifests, and kubeflow/pipelines repos,
+  extracts markdown files, downloads additional pages from kubeflow.org/docs,
+  and produces a structured JSON artifact.
+
+inputs:
+  - name: repos
+    type: String
+    description: >
+      JSON-encoded list of GitHub repository URLs to clone.
+      Defaults to kubeflow/website, kubeflow/manifests, kubeflow/pipelines.
+    default: ""
+  - name: output_path
+    type: String
+    description: Path where the output JSON artifact will be written.
+    default: /tmp/outputs/documents.json
+  - name: include_examples
+    type: Bool
+    description: Whether to include example notebooks and scripts from the pipelines repo.
+    default: "true"
+
+outputs:
+  - name: documents
+    type: Artifact
+    description: >
+      JSON file containing crawled documents with structure:
+      {"documents": [{"id", "source", "title", "content", "url", "metadata"}]}
+
+implementation:
+  container:
+    image: kubeflow-docs-crawler:latest
+    command:
+      - python
+      - component.py
+    args:
+      - --repos
+      - {inputValue: repos}
+      - --output-path
+      - {inputValue: output_path}
+      - --include-examples
+      - {inputValue: include_examples}
+    fileOutputs:
+      documents: /tmp/outputs/documents.json
+
+metadata:
+  labels:
+    app: kubeflow-docs-crawler
+    component: data-ingestion
+  annotations:
+    author: docs-agent
+    version: "1.0.0"
