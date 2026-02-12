@@ -1,0 +1,73 @@
+name: document-chunker
+description: |
+  Splits documents produced by the crawler component into overlapping,
+  token-counted chunks using one of several strategies (fixed-size,
+  semantic / markdown-header, or sentence-based).  Outputs a structured
+  JSON artifact of chunks with preserved metadata and pipeline metrics.
+
+inputs:
+  - name: documents_path
+    type: String
+    description: >
+      Path to the JSON file produced by the crawler component.
+      Expected schema: {"documents": [{"id", "content", "title", "metadata", …}]}
+  - name: chunk_size
+    type: Integer
+    description: Target number of tokens per chunk.
+    default: "512"
+  - name: overlap
+    type: Integer
+    description: Number of overlapping tokens between consecutive chunks.
+    default: "128"
+  - name: strategy
+    type: String
+    description: >
+      Chunking strategy to use.  One of: "fixed" (fixed-size windows),
+      "semantic" (split on markdown headers / sections), or "sentence"
+      (split on sentence boundaries).
+    default: "semantic"
+  - name: output_path
+    type: String
+    description: Path where the output JSON artifact will be written.
+    default: /tmp/outputs/chunks.json
+
+outputs:
+  - name: chunks
+    type: Artifact
+    description: >
+      JSON file containing chunked documents with structure:
+      {"chunks": [{"chunk_id", "text", "tokens", "metadata": {...}}], "metrics": {...}}
+  - name: metrics
+    type: Metrics
+    description: >
+      JSON file with chunking metrics: total_chunks, average_chunk_size,
+      total_tokens, documents_processed, strategy, elapsed_seconds.
+
+implementation:
+  container:
+    image: document-chunker:latest
+    command:
+      - python
+      - component.py
+    args:
+      - --documents-path
+      - {inputValue: documents_path}
+      - --chunk-size
+      - {inputValue: chunk_size}
+      - --overlap
+      - {inputValue: overlap}
+      - --strategy
+      - {inputValue: strategy}
+      - --output-path
+      - {inputValue: output_path}
+    fileOutputs:
+      chunks: /tmp/outputs/chunks.json
+      metrics: /tmp/outputs/metrics.json
+
+metadata:
+  labels:
+    app: document-chunker
+    component: text-processing
+  annotations:
+    author: docs-agent
+    version: "1.0.0"
