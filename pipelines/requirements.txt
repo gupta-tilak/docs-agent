@@ -1,5 +1,8 @@
 # Kubeflow Pipeline Dependencies
-kfp
+kfp>=2.0
+
+# Configuration
+pyyaml>=6.0
 
 # Data Processing
 requests

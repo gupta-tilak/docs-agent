@@ -1,0 +1,84 @@
+# ==========================================================================
+# Kubeflow Docs Ingestion Pipeline – Configuration
+# ==========================================================================
+#
+# This file provides default values for the ingestion pipeline.
+# All values can be overridden via CLI flags when using run_pipeline.py.
+#
+# Usage:
+#   python run_pipeline.py                       # uses these defaults
+#   python run_pipeline.py --chunk-size 256      # overrides chunk_size
+#   python run_pipeline.py --config custom.yaml  # uses a different file
+
+# --------------------------------------------------------------------------
+# Runtime settings (KFP cluster connection)
+# --------------------------------------------------------------------------
+runtime:
+  kfp_host: "http://localhost:8080"
+  namespace: "kubeflow"
+  experiment_name: "docs-ingestion"
+
+# --------------------------------------------------------------------------
+# Pipeline parameters
+# --------------------------------------------------------------------------
+pipeline_parameters:
+  # Repositories to crawl (list of GitHub URLs)
+  repos:
+    - "https://github.com/kubeflow/website"
+    - "https://github.com/kubeflow/manifests"
+    - "https://github.com/kubeflow/pipelines"
+
+  # Whether to include example notebooks/scripts from the pipelines repo
+  include_examples: true
+
+  # ── Chunking ─────────────────────────────────────────────────────────
+  # Target chunk size in tokens (cl100k_base encoding)
+  chunk_size: 512
+
+  # Overlap in tokens between consecutive chunks
+  chunk_overlap: 128
+
+  # Strategy: "fixed" | "semantic" | "sentence"
+  #   fixed    – fixed-size token windows
+  #   semantic – split on markdown headers, sub-split large sections
+  #   sentence – split on sentence boundaries
+  chunk_strategy: "semantic"
+
+  # ── Embeddings ───────────────────────────────────────────────────────
+  # HuggingFace sentence-transformer model name
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+  # Batch size for encoding (increase for GPU, decrease if OOM)
+  batch_size: 32
+
+  # Compute device: "cpu" or "cuda"
+  device: "cpu"
+
+# --------------------------------------------------------------------------
+# Resource requests / limits (informational – set in ingestion_pipeline.py)
+# --------------------------------------------------------------------------
+# These values are baked into the pipeline definition.  To change them,
+# edit the set_cpu_request / set_memory_request calls in
+# ingestion_pipeline.py directly.
+#
+# resources:
+#   crawl_docs:
+#     cpu_request: "1"
+#     memory_request: "2Gi"
+#     cpu_limit: "2"
+#     memory_limit: "4Gi"
+#   chunk_text:
+#     cpu_request: "1"
+#     memory_request: "2Gi"
+#     cpu_limit: "2"
+#     memory_limit: "4Gi"
+#   generate_embeddings:
+#     cpu_request: "2"
+#     memory_request: "4Gi"
+#     cpu_limit: "4"
+#     memory_limit: "8Gi"
+#   validate_output:
+#     cpu_request: "0.5"
+#     memory_request: "512Mi"
+#     cpu_limit: "1"
+#     memory_limit: "1Gi"
