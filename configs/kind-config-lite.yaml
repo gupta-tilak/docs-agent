@@ -1,0 +1,59 @@
+# Lightweight Kind cluster for resource-constrained machines (8GB RAM)
+# Single control-plane node only – saves ~2-3 GB vs the 3-node config
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kubeflow-local
+
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            "enable-admission-plugins": "NodeRestriction"
+        controllerManager:
+          extraArgs:
+            "bind-address": "0.0.0.0"
+        scheduler:
+          extraArgs:
+            "bind-address": "0.0.0.0"
+      # Allow scheduling workloads on the control-plane node
+      - |
+        kind: KubeletConfiguration
+        systemReserved:
+          memory: "256Mi"
+        kubeReserved:
+          memory: "256Mi"
+    extraPortMappings:
+      # KFP API (ml-pipeline service)
+      - containerPort: 80
+        hostPort: 8080
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+      # KServe inference endpoint
+      - containerPort: 8081
+        hostPort: 8081
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+    extraMounts:
+      - hostPath: ./data
+        containerPath: /mnt/data
+        readOnly: false
+        selinuxRelabel: false
+      - hostPath: ./models
+        containerPath: /mnt/models
+        readOnly: false
+        selinuxRelabel: false
+
+networking:
+  disableDefaultCNI: false
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/16"
+  kubeProxyMode: "iptables"

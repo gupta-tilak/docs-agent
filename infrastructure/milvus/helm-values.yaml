@@ -1,0 +1,134 @@
+# ==========================================================================
+# Milvus Standalone – Helm Chart Values
+# ==========================================================================
+# Chart: milvus/milvus  (https://github.com/milvus-io/milvus-helm)
+# Deploys Milvus 2.3+ in standalone mode with embedded etcd & minio.
+#
+# Install:
+#   helm repo add milvus https://zilliztech.github.io/milvus-helm/
+#   helm repo update
+#   helm install milvus milvus/milvus -n kubeflow -f helm-values.yaml
+# ==========================================================================
+
+# ---------------------------------------------------------------------------
+# Cluster mode: standalone (single-node, suitable for Kind / dev)
+# ---------------------------------------------------------------------------
+cluster:
+  enabled: false
+
+standalone:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  # Persist Milvus data to a PVC
+  persistence:
+    enabled: true
+    existingClaim: milvus-data
+    mountPath: /var/lib/milvus
+
+  # Annotations to disable Istio sidecar (avoids networking issues on Kind)
+  podAnnotations:
+    sidecar.istio.io/inject: "false"
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: milvusdb/milvus
+  tag: v2.3.4
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 19530        # gRPC
+  annotations: {}
+
+# Expose the HTTP/metrics port (9091) as well
+serviceMonitor:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# etcd  (embedded dependency)
+# ---------------------------------------------------------------------------
+etcd:
+  enabled: true
+  replicaCount: 1
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 2Gi
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  podAnnotations:
+    sidecar.istio.io/inject: "false"
+
+# ---------------------------------------------------------------------------
+# MinIO  (object storage for Milvus segments)
+# ---------------------------------------------------------------------------
+minio:
+  enabled: true
+  mode: standalone
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 5Gi
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  defaultBuckets: "milvus-bucket"
+  rootUser: minioadmin
+  rootPassword: minioadmin
+  podAnnotations:
+    sidecar.istio.io/inject: "false"
+
+# ---------------------------------------------------------------------------
+# Pulsar / Kafka – not needed for standalone
+# ---------------------------------------------------------------------------
+pulsar:
+  enabled: false
+kafka:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Attu UI (optional Milvus web management console)
+# ---------------------------------------------------------------------------
+attu:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Log level
+# ---------------------------------------------------------------------------
+log:
+  level: info
+
+# ---------------------------------------------------------------------------
+# Extra Milvus configuration (milvus.yaml overrides)
+# ---------------------------------------------------------------------------
+extraConfigFiles:
+  user.yaml: |
+    common:
+      storageType: local
+    dataCoord:
+      segment:
+        maxSize: 512         # MB – keep segments small for dev
+    queryNode:
+      gracefulTime: 5000     # ms

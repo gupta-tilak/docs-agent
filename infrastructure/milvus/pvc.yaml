@@ -1,0 +1,58 @@
+# ==========================================================================
+# Persistent Volume Claims for Milvus Standalone
+# ==========================================================================
+# Applied BEFORE the Helm install so Milvus can bind to an existing claim.
+# On Kind the default StorageClass ("standard" / rancher.io/local-path)
+# dynamically provisions local-path volumes.
+# ==========================================================================
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-data
+  namespace: kubeflow
+  labels:
+    app: milvus
+    component: standalone
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""        # use cluster default
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-etcd-data
+  namespace: kubeflow
+  labels:
+    app: milvus
+    component: etcd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-minio-data
+  namespace: kubeflow
+  labels:
+    app: milvus
+    component: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 5Gi

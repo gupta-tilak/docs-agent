@@ -1,0 +1,208 @@
+# ==========================================================================
+# Milvus Collection Initialization Job
+# ==========================================================================
+# Creates the "kubeflow_docs" collection with the required schema and
+# IVF_FLAT index after Milvus is healthy.
+#
+# Apply:
+#   kubectl apply -f init-collection.yaml -n kubeflow
+# ==========================================================================
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: milvus-init-script
+  namespace: kubeflow
+  labels:
+    app: milvus
+    component: init
+data:
+  init_collection.py: |
+    #!/usr/bin/env python3
+    """Bootstrap the kubeflow_docs collection in Milvus."""
+
+    import os
+    import sys
+    import time
+
+    from pymilvus import (
+        connections,
+        utility,
+        Collection,
+        CollectionSchema,
+        FieldSchema,
+        DataType,
+    )
+
+    # ── Configuration ────────────────────────────────────────────────────
+    MILVUS_HOST = os.getenv("MILVUS_HOST", "milvus.kubeflow.svc.cluster.local")
+    MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
+    COLLECTION  = os.getenv("COLLECTION_NAME", "kubeflow_docs")
+    DIM         = int(os.getenv("EMBEDDING_DIM", "384"))
+    MAX_RETRIES = int(os.getenv("MAX_RETRIES", "30"))
+    RETRY_INTERVAL = int(os.getenv("RETRY_INTERVAL", "10"))
+
+    # ── Wait for Milvus readiness ────────────────────────────────────────
+    print(f"Waiting for Milvus at {MILVUS_HOST}:{MILVUS_PORT} ...")
+    connected = False
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            connections.connect(alias="default", host=MILVUS_HOST, port=MILVUS_PORT)
+            connected = True
+            print(f"  Connected on attempt {attempt}")
+            break
+        except Exception as exc:
+            print(f"  Attempt {attempt}/{MAX_RETRIES} failed: {exc}")
+            time.sleep(RETRY_INTERVAL)
+
+    if not connected:
+        print("ERROR: Could not connect to Milvus after retries. Exiting.")
+        sys.exit(1)
+
+    # ── Health check ─────────────────────────────────────────────────────
+    server_version = utility.get_server_version()
+    print(f"Milvus server version: {server_version}")
+
+    # ── Create collection ────────────────────────────────────────────────
+    if utility.has_collection(COLLECTION):
+        print(f"Collection '{COLLECTION}' already exists – skipping creation.")
+    else:
+        print(f"Creating collection '{COLLECTION}' ...")
+
+        fields = [
+            FieldSchema(
+                name="chunk_id",
+                dtype=DataType.VARCHAR,
+                is_primary=True,
+                max_length=256,
+                description="Unique chunk identifier",
+            ),
+            FieldSchema(
+                name="embedding",
+                dtype=DataType.FLOAT_VECTOR,
+                dim=DIM,
+                description="Dense vector from all-MiniLM-L6-v2 (384-d)",
+            ),
+            FieldSchema(
+                name="text",
+                dtype=DataType.VARCHAR,
+                max_length=65535,
+                description="Raw chunk text",
+            ),
+            FieldSchema(
+                name="source",
+                dtype=DataType.VARCHAR,
+                max_length=1024,
+                description="Source URL or file path",
+            ),
+            FieldSchema(
+                name="metadata",
+                dtype=DataType.JSON,
+                description="Arbitrary metadata (repo, commit, etc.)",
+            ),
+        ]
+
+        schema = CollectionSchema(
+            fields=fields,
+            description="Kubeflow documentation chunks with embeddings",
+            enable_dynamic_field=False,
+        )
+
+        collection = Collection(name=COLLECTION, schema=schema)
+        print(f"  Collection '{COLLECTION}' created.")
+
+    # ── Create index ─────────────────────────────────────────────────────
+    collection = Collection(COLLECTION)
+    existing_indexes = [idx.field_name for idx in collection.indexes]
+
+    if "embedding" in existing_indexes:
+        print("Index on 'embedding' already exists – skipping.")
+    else:
+        print("Creating IVF_FLAT index on 'embedding' (cosine) ...")
+        index_params = {
+            "index_type": "IVF_FLAT",
+            "metric_type": "COSINE",
+            "params": {"nlist": 128},
+        }
+        collection.create_index(field_name="embedding", index_params=index_params)
+        print("  Index created.")
+
+    # ── Load collection into memory ──────────────────────────────────────
+    print("Loading collection into memory ...")
+    collection.load()
+    print("  Collection loaded.")
+
+    # ── Verification ─────────────────────────────────────────────────────
+    print("\n=== Collection Info ===")
+    print(f"  Name       : {collection.name}")
+    print(f"  Description: {collection.description}")
+    print(f"  Num entities: {collection.num_entities}")
+    print(f"  Schema     :")
+    for field in collection.schema.fields:
+        print(f"    - {field.name}: {field.dtype.name}"
+              f"{'  (PK)' if field.is_primary else ''}")
+    print(f"  Indexes    :")
+    for idx in collection.indexes:
+        print(f"    - {idx.field_name}: {idx.params}")
+
+    print("\nInitialization complete ✓")
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: milvus-init-collection
+  namespace: kubeflow
+  labels:
+    app: milvus
+    component: init
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: milvus
+        component: init
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init-milvus
+          image: python:3.11-slim
+          command:
+            - /bin/bash
+            - -c
+            - |
+              pip install --no-cache-dir pymilvus>=2.3.0 grpcio protobuf && \
+              python /scripts/init_collection.py
+          env:
+            - name: MILVUS_HOST
+              value: "milvus.kubeflow.svc.cluster.local"
+            - name: MILVUS_PORT
+              value: "19530"
+            - name: COLLECTION_NAME
+              value: "kubeflow_docs"
+            - name: EMBEDDING_DIM
+              value: "384"
+            - name: MAX_RETRIES
+              value: "30"
+            - name: RETRY_INTERVAL
+              value: "10"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: init-script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: init-script
+          configMap:
+            name: milvus-init-script
