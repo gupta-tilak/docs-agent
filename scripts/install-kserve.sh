@@ -19,6 +19,9 @@ CERT_MANAGER_VERSION="v1.14.5"
 KNATIVE_VERSION="v1.14.1"
 KSERVE_VERSION="v0.13.1"
 
+# Kourier follows minor-only releases (no patch releases like Knative Serving)
+KOURIER_VERSION="v1.14.0"
+
 # ──────────────────────────────────────────────
 # Cluster / Namespace config
 # ──────────────────────────────────────────────
@@ -43,10 +46,11 @@ KNATIVE_SERVING_CRD_URL="https://github.com/knative/serving/releases/download/kn
 KNATIVE_SERVING_CORE_URL="https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
 
 # Kourier is lighter than Istio — preferred for local Kind clusters
-KOURIER_URL="https://github.com/knative/net-kourier/releases/download/knative-${KNATIVE_VERSION}/kourier.yaml"
+# Note: repo moved from knative/net-kourier to knative-extensions/net-kourier
+KOURIER_URL="https://github.com/knative-extensions/net-kourier/releases/download/knative-${KOURIER_VERSION}/kourier.yaml"
 
 KSERVE_URL="https://github.com/kserve/kserve/releases/download/${KSERVE_VERSION}/kserve.yaml"
-KSERVE_RUNTIMES_URL="https://github.com/kserve/kserve/releases/download/${KSERVE_VERSION}/kserve-cluster-defaults.yaml"
+KSERVE_RUNTIMES_URL="https://github.com/kserve/kserve/releases/download/${KSERVE_VERSION}/kserve-cluster-resources.yaml"
 
 # ──────────────────────────────────────────────
 # Colors
@@ -526,8 +530,8 @@ print_summary() {
   echo "  Versions:"
   echo "    cert-manager:    ${CERT_MANAGER_VERSION}"
   echo "    Knative Serving: ${KNATIVE_VERSION}"
+  echo "    Kourier:         ${KOURIER_VERSION}"
   echo "    KServe:          ${KSERVE_VERSION}"
-  echo "    Networking:      Kourier"
   echo ""
   echo "  Configuration:"
   echo "    Inference domain: ${INFERENCE_DOMAIN}"
