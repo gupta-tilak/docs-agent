@@ -1,0 +1,89 @@
+name: milvus-indexer
+description: |
+  Loads dense vector embeddings produced by the embedding-generator
+  component and inserts them into a Milvus vector database collection.
+  Supports connection pooling, retry logic, batch insertion, idempotent
+  upserts, and automatic index rebuilding.
+
+  Outputs:
+    • metrics.json – insertion statistics and timing information
+
+inputs:
+  - name: embeddings_path
+    type: String
+    description: >
+      Path to the embeddings.npy file produced by the embedding-generator
+      component.  Must be a 2-D NumPy float32 array of shape (N, D).
+  - name: metadata_path
+    type: String
+    description: >
+      Path to the metadata.json file produced by the embedding-generator
+      component.  Each record must contain at least a chunk_id field.
+  - name: milvus_host
+    type: String
+    description: Milvus server hostname.
+    default: "milvus-standalone.kubeflow.svc.cluster.local"
+  - name: milvus_port
+    type: Integer
+    description: Milvus server gRPC port.
+    default: "19530"
+  - name: collection_name
+    type: String
+    description: Target Milvus collection name.
+    default: "kubeflow_docs"
+  - name: batch_size
+    type: Integer
+    description: Number of vectors to insert per batch.
+    default: "100"
+  - name: rebuild_index
+    type: Bool
+    description: >
+      Whether to force-rebuild the vector index after insertion.
+      Set to "true" after large data changes for optimal query performance.
+    default: "false"
+  - name: output_dir
+    type: String
+    description: Directory where output metrics will be written.
+    default: /tmp/outputs
+
+outputs:
+  - name: metrics
+    type: Metrics
+    description: >
+      JSON file with indexing metrics: total_vectors_inserted,
+      insert_rate_vectors_per_sec, index_build_time_seconds,
+      collection_total_entities, and more.
+
+implementation:
+  container:
+    image: milvus-indexer:latest
+    command:
+      - python
+      - component.py
+    args:
+      - --embeddings-path
+      - {inputValue: embeddings_path}
+      - --metadata-path
+      - {inputValue: metadata_path}
+      - --milvus-host
+      - {inputValue: milvus_host}
+      - --milvus-port
+      - {inputValue: milvus_port}
+      - --collection-name
+      - {inputValue: collection_name}
+      - --batch-size
+      - {inputValue: batch_size}
+      - --rebuild-index
+      - {inputValue: rebuild_index}
+      - --output-dir
+      - {inputValue: output_dir}
+    fileOutputs:
+      metrics: /tmp/outputs/metrics.json
+
+metadata:
+  labels:
+    app: milvus-indexer
+    component: vector-indexing
+  annotations:
+    author: docs-agent
+    version: "1.0.0"
