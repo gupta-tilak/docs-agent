@@ -36,13 +36,16 @@
 
 | Resource | Minimum | Recommended | Notes |
 |----------|---------|-------------|-------|
-| **RAM** | 8 GB | 12+ GB | Allocated to Docker, not just system total |
-| **CPU** | 4 cores | 6+ cores | Allocated to Docker |
+| **RAM** | 6 GB | 8+ GB | Allocated to Docker, not just system total |
+| **CPU** | 4 cores | 4+ cores | Allocated to Docker |
 | **Disk** | 20 GB free | 40+ GB free | Container images are large |
 | **OS** | macOS 12+, Ubuntu 20.04+, Windows 11 (WSL2) | — | Native Linux is fastest |
 
 > **Important (macOS / Windows):** Docker Desktop has its own resource limits.
-> Go to **Docker Desktop → Settings → Resources** and increase RAM to 12 GB and CPUs to 6.
+> Go to **Docker Desktop → Settings → Resources** and increase RAM to at least 6 GB (8 GB recommended) and CPUs to 4.
+>
+> **16 GB laptop?** Allocate 8-10 GB to Docker. The install scripts automatically patch pod
+> resource requests to fit within local Docker environments.
 
 ### Verify prerequisites
 
@@ -68,7 +71,7 @@ If you just want to get everything running as fast as possible:
 # Clone the repo
 git clone <your-repo-url> && cd docs-agent
 
-# 1. Create the Kind cluster (Kubernetes v1.29, 3 nodes)
+# 1. Create the Kind cluster (Kubernetes v1.29, 2 nodes)
 ./scripts/setup-kind-cluster.sh
 
 # 2. Install Kubeflow Pipelines
@@ -109,14 +112,14 @@ After the scripts complete:
 │  │    ▼              ▼                                      │   │
 │  │  /mnt/data    /mnt/models                                │   │
 │  │                                                          │   │
-│  │  ┌──────────────────┐  ┌───────────┐  ┌───────────┐     │   │
-│  │  │  Control Plane   │  │  Worker 1 │  │  Worker 2 │     │   │
-│  │  │                  │  │           │  │           │     │   │
-│  │  │  Port mappings:  │  │  Runs     │  │  Runs     │     │   │
-│  │  │  :8080 → :80     │  │  workload │  │  workload │     │   │
-│  │  │  :8081 → :8081   │  │  pods     │  │  pods     │     │   │
-│  │  │  :5000 → :5000   │  │           │  │           │     │   │
-│  │  └──────────────────┘  └───────────┘  └───────────┘     │   │
+│  │  ┌──────────────────┐  ┌───────────────────────┐         │   │
+│  │  │  Control Plane   │  │  Worker               │         │   │
+│  │  │  (also runs pods)│  │                       │         │   │
+│  │  │  Port mappings:  │  │  Runs workload pods   │         │   │
+│  │  │  :8080 → :80     │  │                       │         │   │
+│  │  │  :8081 → :8081   │  │                       │         │   │
+│  │  │  :5000 → :5000   │  │                       │         │   │
+│  │  └──────────────────┘  └───────────────────────┘         │   │
 │  │                                                          │   │
 │  │  Namespaces:                                             │   │
 │  │  ┌─────────────────────────────────────────────────┐     │   │
@@ -195,7 +198,7 @@ kubectl get pods -n kube-system
 
 ### 2. Install Kubeflow Pipelines
 
-Installs the standalone Kubeflow Pipelines v2.3.0 deployment.
+Installs the standalone Kubeflow Pipelines v2.5.0 deployment.
 
 ```bash
 ./scripts/install-kubeflow-pipelines.sh
@@ -604,7 +607,7 @@ spec:
 Use the KFP SDK to build pipelines:
 
 ```bash
-pip install kfp==2.3.0
+pip install kfp==2.5.0
 ```
 
 ```python
@@ -668,7 +671,7 @@ kubectl patch deployment metrics-server -n kube-system --type='json' \
 | `configs/kind-config.yaml` | Kind cluster configuration (nodes, ports, mounts) |
 | `configs/test-inference-service.yaml` | Sample sklearn InferenceService for testing KServe |
 | `scripts/setup-kind-cluster.sh` | Creates the Kind Kubernetes cluster |
-| `scripts/install-kubeflow-pipelines.sh` | Installs Kubeflow Pipelines (standalone v2.3.0) |
+| `scripts/install-kubeflow-pipelines.sh` | Installs Kubeflow Pipelines (standalone v2.5.0) |
 | `scripts/install-kserve.sh` | Installs KServe + cert-manager + Knative + Kourier |
 
 ---
@@ -678,7 +681,7 @@ kubectl patch deployment metrics-server -n kube-system --type='json' \
 | Component | Version |
 |-----------|---------|
 | Kubernetes | v1.29.2 |
-| Kubeflow Pipelines | v2.3.0 |
+| Kubeflow Pipelines | v2.5.0 |
 | KServe | v0.13.1 |
 | Knative Serving | v1.14.1 |
 | cert-manager | v1.14.5 |

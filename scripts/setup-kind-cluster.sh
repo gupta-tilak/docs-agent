@@ -15,8 +15,8 @@ CLUSTER_NAME="kubeflow-local"
 KIND_CONFIG="configs/kind-config.yaml"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REQUIRED_DOCKER_MEM_GB=12  # Recommended: 12 GB for Kubeflow stack
-REQUIRED_DOCKER_CPUS=6     # Recommended: 6 CPUs total (4 per worker + control plane)
+REQUIRED_DOCKER_MEM_GB=6   # Minimum: 6 GB for Kubeflow stack (8+ recommended)
+REQUIRED_DOCKER_CPUS=4     # Minimum: 4 CPUs
 
 # ──────────────────────────────────────────────
 # Color helpers
@@ -209,7 +209,7 @@ main() {
   echo ""
   echo "Cluster details:"
   echo "  Name:       ${CLUSTER_NAME}"
-  echo "  Nodes:      1 control-plane + 2 workers"
+  echo "  Nodes:      1 control-plane + 1 worker"
   echo "  K8s:        v1.29"
   echo "  Context:    kind-${CLUSTER_NAME}"
   echo ""

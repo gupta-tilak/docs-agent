@@ -1,5 +1,6 @@
 # Kind cluster configuration for running Kubeflow locally
-# Kubernetes v1.29 with 1 control plane + 2 worker nodes
+# Kubernetes v1.29 with 1 control plane + 1 worker node
+# Designed to run on machines with 8-16 GB RAM allocated to Docker.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: kubeflow-local
@@ -15,6 +16,15 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
+      # Allow scheduling workloads on the control-plane node
+      - |
+        kind: KubeletConfiguration
+        systemReserved:
+          memory: "256Mi"
+        kubeReserved:
+          memory: "256Mi"
+        evictionHard:
+          memory.available: "100Mi"
     extraPortMappings:
       # Kubeflow Dashboard (Istio Ingress Gateway)
       - containerPort: 80
@@ -41,7 +51,7 @@ nodes:
         readOnly: false
         selinuxRelabel: false
 
-  # --- Worker Node 1 ---
+  # --- Worker Node ---
   - role: worker
     image: kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245
     kubeadmConfigPatches:
@@ -49,8 +59,8 @@ nodes:
         kind: JoinConfiguration
         nodeRegistration:
           kubeletExtraArgs:
-            system-reserved: "memory=512Mi"
-            kube-reserved: "memory=512Mi"
+            system-reserved: "memory=256Mi"
+            kube-reserved: "memory=256Mi"
     extraMounts:
       - hostPath: ./data
         containerPath: /mnt/data
@@ -60,33 +70,6 @@ nodes:
         containerPath: /mnt/models
         readOnly: false
         selinuxRelabel: false
-
-  # --- Worker Node 2 ---
-  - role: worker
-    image: kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245
-    kubeadmConfigPatches:
-      - |
-        kind: JoinConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            system-reserved: "memory=512Mi"
-            kube-reserved: "memory=512Mi"
-    extraMounts:
-      - hostPath: ./data
-        containerPath: /mnt/data
-        readOnly: false
-        selinuxRelabel: false
-      - hostPath: ./models
-        containerPath: /mnt/models
-        readOnly: false
-        selinuxRelabel: false
-
-# Feature gates required for Kubeflow components
-featureGates:
-  # Graceful node shutdown support
-  GracefulNodeShutdown: true
-  # Topology-aware scheduling (useful for GPU/resource-aware workloads)
-  TopologyAwareHints: true
 
 # Networking configuration
 networking:

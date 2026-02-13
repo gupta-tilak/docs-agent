@@ -23,7 +23,7 @@ set -euo pipefail
 # Configuration
 # ──────────────────────────────────────────────
 KUBEFLOW_NAMESPACE="kubeflow"
-KFP_VERSION="2.3.0"
+KFP_VERSION="2.5.0"
 KFP_MANIFEST_BASE="https://github.com/kubeflow/pipelines/archive/refs/tags/${KFP_VERSION}.tar.gz"
 CLUSTER_NAME="kubeflow-local"
 KUBECTL_CONTEXT="kind-${CLUSTER_NAME}"
@@ -33,6 +33,9 @@ INSTALL_TIMEOUT=600
 POD_READY_INTERVAL=15
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KIND_CONFIG="${SCRIPT_DIR}/../configs/kind-config-lite.yaml"
+
+# Global temp directory for manifests (set in download_manifests, cleaned up on EXIT)
+MANIFEST_TMPDIR=""
 
 # Essential deployments only (no cache-server, UI, viewer-crd)
 EXPECTED_DEPLOYMENTS=(
@@ -141,13 +144,18 @@ create_namespace() {
 # ──────────────────────────────────────────────
 # Download & extract manifests
 # ──────────────────────────────────────────────
+cleanup_tmpdir() {
+  if [[ -n "${MANIFEST_TMPDIR:-}" && -d "${MANIFEST_TMPDIR}" ]]; then
+    rm -rf "${MANIFEST_TMPDIR}"
+  fi
+}
+
 download_manifests() {
   step "Downloading Kubeflow Pipelines v${KFP_VERSION} manifests..."
-  local tmpdir
-  tmpdir=$(mktemp -d)
-  trap 'rm -rf "${tmpdir}"' EXIT
-  curl -sL "${KFP_MANIFEST_BASE}" | tar -xz -C "${tmpdir}"
-  MANIFEST_DIR="${tmpdir}/pipelines-${KFP_VERSION}/manifests/kustomize"
+  MANIFEST_TMPDIR=$(mktemp -d)
+  trap cleanup_tmpdir EXIT
+  curl -sL "${KFP_MANIFEST_BASE}" | tar -xz -C "${MANIFEST_TMPDIR}"
+  MANIFEST_DIR="${MANIFEST_TMPDIR}/pipelines-${KFP_VERSION}/manifests/kustomize"
   if [[ ! -d "${MANIFEST_DIR}" ]]; then
     error "Manifest directory not found after extraction."
     exit 1
@@ -162,6 +170,27 @@ download_manifests() {
 install_kfp() {
   step "Installing Kubeflow Pipelines components..."
 
+  # First: install cluster-scoped resources (CRDs, ClusterRoles)
+  local cluster_scoped_dir="${MANIFEST_DIR}/cluster-scoped-resources"
+  if [[ -d "${cluster_scoped_dir}" ]]; then
+    info "Applying cluster-scoped resources (CRDs, ClusterRoles)..."
+    if ! kubectl apply -k "${cluster_scoped_dir}" 2>&1; then
+      error "Failed to apply cluster-scoped resources."
+      exit 1
+    fi
+    info "Waiting for CRDs to be established..."
+    kubectl wait --for condition=established --timeout=60s \
+      crd/workflows.argoproj.io \
+      crd/cronworkflows.argoproj.io \
+      crd/clusterworkflowtemplates.argoproj.io \
+      crd/workflowtemplates.argoproj.io 2>/dev/null || \
+      warn "Some CRDs may not be ready yet, continuing..."
+    success "Cluster-scoped resources applied."
+  else
+    warn "cluster-scoped-resources/ not found; CRDs may be bundled in the overlay."
+  fi
+
+  # Second: install namespace-scoped resources
   local kustomize_dir="${MANIFEST_DIR}/env/platform-agnostic-emissary"
   if [[ ! -d "${kustomize_dir}" ]]; then
     kustomize_dir="${MANIFEST_DIR}/env/platform-agnostic"
@@ -172,11 +201,133 @@ install_kfp() {
   fi
 
   info "Applying kustomize overlay: $(basename "${kustomize_dir}")"
-  if ! kubectl apply -k "${kustomize_dir}" --namespace "${KUBEFLOW_NAMESPACE}" 2>&1; then
+  if ! kubectl apply -k "${kustomize_dir}" 2>&1; then
     error "kubectl apply failed."
     exit 1
   fi
   success "KFP manifests applied."
+  echo ""
+}
+
+# ──────────────────────────────────────────────
+# Patch manifest YAML files BEFORE kubectl apply
+# Fixes known broken image references directly in the downloaded
+# YAML files so pods are created with correct images from the start.
+# ──────────────────────────────────────────────
+patch_manifest_images() {
+  step "Patching manifest images before apply..."
+
+  # ── MinIO: gcr.io/ml-pipeline/minio has been removed from GCR ──
+  local minio_deploy="${MANIFEST_DIR}/third-party/minio/base/minio-deployment.yaml"
+  local minio_new="minio/minio:RELEASE.2024-06-13T22-53-53Z"
+  if [[ -f "${minio_deploy}" ]]; then
+    sed "s|gcr.io/ml-pipeline/minio:RELEASE.2019-08-14T20-37-41Z-license-compliance|${minio_new}|g" \
+      "${minio_deploy}" > "${minio_deploy}.tmp" && mv "${minio_deploy}.tmp" "${minio_deploy}"
+    # Add MINIO_ROOT_USER/PASSWORD aliases (newer MinIO images require them)
+    if ! grep -q 'MINIO_ROOT_USER' "${minio_deploy}"; then
+      sed '/name: MINIO_ACCESS_KEY/a\        - name: MINIO_ROOT_USER\n          valueFrom:\n            secretKeyRef:\n              name: mlpipeline-minio-artifact\n              key: accesskey' \
+        "${minio_deploy}" > "${minio_deploy}.tmp" && mv "${minio_deploy}.tmp" "${minio_deploy}"
+      sed '/name: MINIO_SECRET_KEY/a\        - name: MINIO_ROOT_PASSWORD\n          valueFrom:\n            secretKeyRef:\n              name: mlpipeline-minio-artifact\n              key: secretkey' \
+        "${minio_deploy}" > "${minio_deploy}.tmp" && mv "${minio_deploy}.tmp" "${minio_deploy}"
+    fi
+    success "  minio → ${minio_new}"
+  else
+    warn "  minio-deployment.yaml not at expected path; scanning all manifests..."
+    find "${MANIFEST_DIR}" -name '*.yaml' -print0 | while IFS= read -r -d '' f; do
+      if grep -q 'gcr.io/ml-pipeline/minio' "$f"; then
+        sed "s|gcr.io/ml-pipeline/minio:RELEASE.2019-08-14T20-37-41Z-license-compliance|${minio_new}|g" \
+          "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+        success "  Patched minio in: $(basename "$f")"
+      fi
+    done
+  fi
+
+  # ── MySQL: gcr.io/ml-pipeline/mysql → Docker Hub fallback ──
+  # Use mysql:8.0 (floating tag) instead of 8.0.26 — the pinned tag lacks ARM64 manifests
+  local mysql_deploy="${MANIFEST_DIR}/third-party/mysql/base/mysql-deployment.yaml"
+  if [[ -f "${mysql_deploy}" ]]; then
+    sed 's|gcr.io/ml-pipeline/mysql:8.0.26|mysql:8.0|g' \
+      "${mysql_deploy}" > "${mysql_deploy}.tmp" && mv "${mysql_deploy}.tmp" "${mysql_deploy}"
+    success "  mysql → mysql:8.0 (Docker Hub, multi-arch)"
+  fi
+
+  # ── Best-effort pre-pull key images into Kind ──
+  info "  Pre-pulling images into Kind (best-effort)..."
+  for img in \
+    "${minio_new}" \
+    "mysql:8.0" \
+    "ghcr.io/kubeflow/kfp-api-server:${KFP_VERSION}"
+  do
+    if timeout 120 docker pull "${img}" &>/dev/null; then
+      kind load docker-image "${img}" --name "${CLUSTER_NAME}" &>/dev/null || true
+      success "    Pre-loaded: ${img}"
+    else
+      info "    Could not pre-pull ${img} (kubelet will pull directly)"
+    fi
+  done
+
+  echo ""
+}
+
+# ──────────────────────────────────────────────
+# Post-apply image verification & safety-net
+# ──────────────────────────────────────────────
+fix_image_references() {
+  step "Verifying container image references..."
+
+  # Safety-net: if minio somehow still has the broken gcr.io image, force-patch
+  if kubectl get deployment minio -n "${KUBEFLOW_NAMESPACE}" &>/dev/null; then
+    local minio_img
+    minio_img=$(kubectl get deployment minio -n "${KUBEFLOW_NAMESPACE}" \
+      -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+    if [[ "${minio_img}" == *"gcr.io/ml-pipeline/minio"* ]]; then
+      warn "  minio still using broken gcr.io image — force-patching..."
+      kubectl set image deployment/minio -n "${KUBEFLOW_NAMESPACE}" \
+        "minio=minio/minio:RELEASE.2024-06-13T22-53-53Z" 2>/dev/null || true
+    else
+      success "  minio: ${minio_img}"
+    fi
+  fi
+
+  # Safety-net: if mysql still has gcr.io, force-patch
+  if kubectl get deployment mysql -n "${KUBEFLOW_NAMESPACE}" &>/dev/null; then
+    local mysql_img
+    mysql_img=$(kubectl get deployment mysql -n "${KUBEFLOW_NAMESPACE}" \
+      -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+    if [[ "${mysql_img}" == *"gcr.io/ml-pipeline/mysql"* ]]; then
+      warn "  mysql still using gcr.io image — force-patching..."
+      kubectl set image deployment/mysql -n "${KUBEFLOW_NAMESPACE}" \
+        "mysql=mysql:8.0" 2>/dev/null || true
+    else
+      success "  mysql: ${mysql_img}"
+    fi
+  fi
+
+  # Report ghcr.io component images
+  for deploy in ml-pipeline workflow-controller; do
+    if kubectl get deployment "${deploy}" -n "${KUBEFLOW_NAMESPACE}" &>/dev/null; then
+      local img
+      img=$(kubectl get deployment "${deploy}" -n "${KUBEFLOW_NAMESPACE}" \
+        -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+      success "  ${deploy}: ${img}"
+    fi
+  done
+
+  echo ""
+}
+
+# ──────────────────────────────────────────────
+# Clean up old ReplicaSets left after patching
+# ──────────────────────────────────────────────
+cleanup_stale_replicasets() {
+  step "Cleaning up stale ReplicaSets..."
+  local old_rs
+  old_rs=$(kubectl get rs -n "${KUBEFLOW_NAMESPACE}" --no-headers 2>/dev/null \
+    | awk '$2 == 0 && $3 == 0 && $4 == 0 {print $1}') || true
+  for rs in ${old_rs}; do
+    kubectl delete rs "${rs}" -n "${KUBEFLOW_NAMESPACE}" --timeout=30s 2>/dev/null || true
+  done
+  success "  Stale ReplicaSets cleaned up."
   echo ""
 }
 
@@ -469,9 +620,12 @@ main() {
       create_cluster
       create_namespace
       download_manifests
+      patch_manifest_images
       install_kfp
+      fix_image_references
       disable_non_essential
       patch_resources
+      cleanup_stale_replicasets
       wait_for_pods
       verify_services
       start_port_forward
@@ -486,9 +640,12 @@ main() {
       check_cluster
       create_namespace
       download_manifests
+      patch_manifest_images
       install_kfp
+      fix_image_references
       disable_non_essential
       patch_resources
+      cleanup_stale_replicasets
       wait_for_pods
       verify_services
       start_port_forward
