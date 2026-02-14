@@ -32,16 +32,9 @@ nodes:
         kubeReserved:
           memory: "256Mi"
     extraPortMappings:
-      # KFP API (ml-pipeline service)
-      - containerPort: 80
-        hostPort: 8080
-        protocol: TCP
-        listenAddress: "127.0.0.1"
-      # KServe inference endpoint
-      - containerPort: 8081
-        hostPort: 8081
-        protocol: TCP
-        listenAddress: "127.0.0.1"
+      # Note: KFP UI (8083) and KServe/Kourier (8082) are accessed via
+      # kubectl port-forward, not Kind node ports, to avoid Docker port
+      # conflicts on macOS.
     extraMounts:
       - hostPath: ./data
         containerPath: /mnt/data

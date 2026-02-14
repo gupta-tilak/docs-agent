@@ -26,21 +26,14 @@ nodes:
         evictionHard:
           memory.available: "100Mi"
     extraPortMappings:
-      # Kubeflow Dashboard (Istio Ingress Gateway)
-      - containerPort: 80
-        hostPort: 8080
-        protocol: TCP
-        listenAddress: "127.0.0.1"
-      # KServe inference endpoint
-      - containerPort: 8081
-        hostPort: 8081
-        protocol: TCP
-        listenAddress: "127.0.0.1"
       # MLflow tracking server (optional)
       - containerPort: 5000
         hostPort: 5000
         protocol: TCP
         listenAddress: "127.0.0.1"
+      # Note: Kubeflow Pipelines UI (8083) and KServe/Kourier (8082)
+      # are accessed via kubectl port-forward, not Kind node ports.
+      # This avoids Docker port conflicts on macOS.
     extraMounts:
       - hostPath: ./data
         containerPath: /mnt/data

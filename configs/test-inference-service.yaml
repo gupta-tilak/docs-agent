@@ -6,12 +6,12 @@
 #   kubectl apply -f configs/test-inference-service.yaml -n kserve-test
 #
 # Test:
-#   kubectl port-forward -n kourier-system svc/kourier 8081:80 &
+#   kubectl port-forward --address 127.0.0.1 -n kourier-system svc/kourier 8082:80 &
 #   curl -v \
 #     -H "Host: sklearn-iris.kserve-test.example.com" \
 #     -H "Content-Type: application/json" \
 #     -d '{"instances": [[6.8, 2.8, 4.8, 1.4], [6.0, 3.4, 4.5, 1.6]]}' \
-#     http://localhost:8081/v1/models/sklearn-iris:predict
+#     http://localhost:8082/v1/models/sklearn-iris:predict
 #
 # Expected response:
 #   {"predictions": [1, 1]}

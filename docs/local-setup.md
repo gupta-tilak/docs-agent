@@ -89,8 +89,8 @@ After the scripts complete:
 
 | Component | URL | How to access |
 |-----------|-----|---------------|
-| Kubeflow Pipelines UI | http://localhost:8080 | Auto port-forward, or `./scripts/install-kubeflow-pipelines.sh portfwd` |
-| KServe Inference | http://localhost:8081 | `kubectl port-forward -n kourier-system svc/kourier 8081:80` |
+| Kubeflow Pipelines UI | http://localhost:8083 | Auto port-forward, or `./scripts/install-kubeflow-pipelines.sh portfwd` |
+| KServe Inference | http://localhost:8082 | `kubectl port-forward --address 127.0.0.1 -n kourier-system svc/kourier 8082:80` |
 | MLflow (if installed) | http://localhost:5000 | Separate install required |
 
 ---
@@ -116,8 +116,8 @@ After the scripts complete:
 │  │  │  Control Plane   │  │  Worker               │         │   │
 │  │  │  (also runs pods)│  │                       │         │   │
 │  │  │  Port mappings:  │  │  Runs workload pods   │         │   │
-│  │  │  :8080 → :80     │  │                       │         │   │
-│  │  │  :8081 → :8081   │  │                       │         │   │
+│  │  │  :8083 → :80     │  │                       │         │   │
+│  │  │  :8082 → :8082   │  │                       │         │   │
 │  │  │  :5000 → :5000   │  │                       │         │   │
 │  │  └──────────────────┘  └───────────────────────┘         │   │
 │  │                                                          │   │
@@ -263,16 +263,16 @@ The install script automatically sets up port-forwarding. If it stops:
 ./scripts/install-kubeflow-pipelines.sh portfwd
 
 # Or manually:
-kubectl port-forward svc/ml-pipeline-ui -n kubeflow 8080:80
+kubectl port-forward --address 127.0.0.1 svc/ml-pipeline-ui -n kubeflow 8083:80
 ```
 
-Open: **http://localhost:8080**
+Open: **http://localhost:8083**
 
 ### KServe Inference Endpoint
 
 ```bash
 # Port-forward Kourier gateway
-kubectl port-forward -n kourier-system svc/kourier 8081:80
+kubectl port-forward --address 127.0.0.1 -n kourier-system svc/kourier 8082:80
 ```
 
 Then send requests with the appropriate `Host` header:
@@ -281,7 +281,7 @@ Then send requests with the appropriate `Host` header:
 curl -H "Host: <model-name>.<namespace>.example.com" \
      -H "Content-Type: application/json" \
      -d '{"instances": [[1.0, 2.0, 3.0, 4.0]]}' \
-     http://localhost:8081/v1/models/<model-name>:predict
+     http://localhost:8082/v1/models/<model-name>:predict
 ```
 
 ### Deploy & Test a Sample Model
@@ -298,12 +298,12 @@ kubectl apply -f configs/test-inference-service.yaml -n kserve-test
 kubectl get inferenceservice sklearn-iris -n kserve-test -w
 
 # Test inference
-kubectl port-forward -n kourier-system svc/kourier 8081:80 &
+kubectl port-forward --address 127.0.0.1 -n kourier-system svc/kourier 8082:80 &
 curl -v \
   -H "Host: sklearn-iris.kserve-test.example.com" \
   -H "Content-Type: application/json" \
   -d '{"instances": [[6.8, 2.8, 4.8, 1.4], [6.0, 3.4, 4.5, 1.6]]}' \
-  http://localhost:8081/v1/models/sklearn-iris:predict
+  http://localhost:8082/v1/models/sklearn-iris:predict
 
 # Expected response: {"predictions": [1, 1]}
 ```
@@ -400,28 +400,23 @@ Restart Docker Desktop after changing settings.
 
 ### Port conflicts
 
-```
-Error: listen tcp 127.0.0.1:8080: bind: address already in use
-```
-
-**Solution:** Find and stop the process using the port:
+If a port-forward fails with "address already in use", find and stop the conflicting process:
 
 ```bash
-# Find what's using port 8080
-lsof -i :8080
+# Find what's using a port (e.g., 8083)
+lsof -i :8083
 
 # Kill it (replace <PID> with the actual PID)
 kill <PID>
 
-# Or use a different port — edit configs/kind-config.yaml:
-#   hostPort: 9080  (instead of 8080)
+# Or change the port in the install script's UI_PORT / API_PORT variable
 ```
 
 Common port conflicts:
 | Port | Common culprit | Fix |
 |------|----------------|-----|
-| 8080 | Other web servers, Jenkins | Change `hostPort` in kind-config.yaml |
-| 8081 | Other services | Change `hostPort` in kind-config.yaml |
+| 8083 | Other web servers, Jenkins | Change port in install script |
+| 8082 | Other services | Change `hostPort` in kind-config.yaml |
 | 5000 | macOS AirPlay Receiver | Disable in System Settings → AirDrop & Handoff |
 
 ### Mount path errors (macOS)

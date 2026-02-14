@@ -10,7 +10,7 @@ Usage:
 
     # Override specific parameters
     python run_pipeline.py \\
-        --host http://localhost:8080 \\
+        --host http://localhost:8083 \\
         --experiment my-experiment \\
         --chunk-size 256 \\
         --embedding-model sentence-transformers/all-mpnet-base-v2
@@ -155,10 +155,10 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="""\
 Examples:
   # Submit with YAML defaults
-  python run_pipeline.py --host http://localhost:8080
+  python run_pipeline.py --host http://localhost:8083
 
   # Override repos and chunk size
-  python run_pipeline.py --host http://localhost:8080 \\
+  python run_pipeline.py --host http://localhost:8083 \\
       --repos https://github.com/kubeflow/website \\
       --chunk-size 256
 
@@ -169,7 +169,7 @@ Examples:
     p.add_argument(
         "--host",
         type=str,
-        help="KFP API endpoint (e.g. http://localhost:8080). "
+        help="KFP API endpoint (e.g. http://localhost:8083). "
         "Reads from pipeline_config.yaml if omitted.",
     )
     p.add_argument(
@@ -241,7 +241,7 @@ def main() -> None:
     config = load_config(args.config)
     params, runtime_cfg = merge_params(config, args)
 
-    host = args.host or runtime_cfg.get("kfp_host", "http://localhost:8080")
+    host = args.host or runtime_cfg.get("kfp_host", "http://localhost:8083")
     namespace = args.namespace or runtime_cfg.get("namespace")
     experiment = args.experiment or runtime_cfg.get(
         "experiment_name", "docs-ingestion"
@@ -264,7 +264,7 @@ def main() -> None:
         print(
             "[hint] Make sure the KFP API is reachable at the configured host "
             "and that you have port-forwarded if running locally:\n"
-            "       kubectl port-forward svc/ml-pipeline-ui 8080:80 -n kubeflow",
+            "       kubectl port-forward --address 127.0.0.1 svc/ml-pipeline-ui 8083:80 -n kubeflow",
             file=sys.stderr,
         )
         sys.exit(1)

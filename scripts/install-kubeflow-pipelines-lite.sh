@@ -27,7 +27,7 @@ KFP_VERSION="2.5.0"
 KFP_MANIFEST_BASE="https://github.com/kubeflow/pipelines/archive/refs/tags/${KFP_VERSION}.tar.gz"
 CLUSTER_NAME="kubeflow-local"
 KUBECTL_CONTEXT="kind-${CLUSTER_NAME}"
-API_PORT=8080
+API_PORT=8083
 PORTFWD_PID_FILE="/tmp/kfp-api-portforward.pid"
 INSTALL_TIMEOUT=600
 POD_READY_INTERVAL=15
@@ -523,7 +523,7 @@ start_port_forward() {
     warn "ml-pipeline not available yet. Port-forward may fail."
   }
 
-  kubectl port-forward svc/ml-pipeline -n "${KUBEFLOW_NAMESPACE}" \
+  kubectl port-forward --address 127.0.0.1 svc/ml-pipeline -n "${KUBEFLOW_NAMESPACE}" \
     "${API_PORT}:8888" &>/dev/null &
   local pfpid=$!
   echo "${pfpid}" > "${PORTFWD_PID_FILE}"
@@ -534,7 +534,7 @@ start_port_forward() {
     success "KFP API: http://localhost:${API_PORT}"
   else
     warn "Port-forward exited. Start manually:"
-    echo "  kubectl port-forward svc/ml-pipeline -n ${KUBEFLOW_NAMESPACE} ${API_PORT}:8888"
+    echo "  kubectl port-forward --address 127.0.0.1 svc/ml-pipeline -n ${KUBEFLOW_NAMESPACE} ${API_PORT}:8888"
   fi
   echo ""
 }

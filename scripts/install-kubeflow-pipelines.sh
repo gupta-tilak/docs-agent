@@ -19,7 +19,7 @@ KFP_VERSION="2.5.0"
 KFP_MANIFEST_BASE="https://github.com/kubeflow/pipelines/archive/refs/tags/${KFP_VERSION}.tar.gz"
 CLUSTER_NAME="kubeflow-local"
 KUBECTL_CONTEXT="kind-${CLUSTER_NAME}"
-UI_PORT=8080
+UI_PORT=8083
 PORTFWD_PID_FILE="/tmp/kfp-portforward.pid"
 INSTALL_TIMEOUT=900   # 15 minutes total timeout for pod readiness
 POD_READY_INTERVAL=15 # seconds between readiness checks
@@ -45,7 +45,7 @@ EXPECTED_DEPLOYMENTS=(
 # These override the upstream defaults which are too generous for local/Docker setups
 RESOURCE_PATCHES=(
   "ml-pipeline 100m 256Mi 500m 512Mi"
-  "ml-pipeline-ui 50m 128Mi 200m 256Mi"
+  "ml-pipeline-ui 50m 256Mi 200m 512Mi"
   "ml-pipeline-persistenceagent 50m 64Mi 200m 256Mi"
   "ml-pipeline-scheduledworkflow 50m 64Mi 200m 256Mi"
   "ml-pipeline-viewer-crd 30m 64Mi 100m 128Mi"
@@ -460,6 +460,23 @@ patch_resources() {
   # Brief wait for rolling updates triggered by patches
   info "Waiting 10s for patched deployments to begin rolling update..."
   sleep 10
+
+  # Relax ml-pipeline-ui probes — the default 3s initialDelay is too aggressive
+  # for resource-constrained local clusters, causing CrashLoopBackOff
+  if kubectl get deployment ml-pipeline-ui -n "${KUBEFLOW_NAMESPACE}" &>/dev/null; then
+    info "Adjusting ml-pipeline-ui probe timings..."
+    kubectl patch deployment ml-pipeline-ui -n "${KUBEFLOW_NAMESPACE}" --type='json' -p='[
+      {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/initialDelaySeconds","value":30},
+      {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/periodSeconds","value":10},
+      {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/timeoutSeconds","value":5},
+      {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/failureThreshold","value":6},
+      {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/initialDelaySeconds","value":15},
+      {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/periodSeconds","value":10},
+      {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/timeoutSeconds","value":5}
+    ]' 2>/dev/null && success "  ml-pipeline-ui probes adjusted" \
+       || warn "  ml-pipeline-ui probe patch failed"
+  fi
+
   echo ""
 }
 
@@ -597,7 +614,7 @@ start_port_forward() {
   }
 
   # Start port-forward in background
-  kubectl port-forward svc/ml-pipeline-ui -n "${KUBEFLOW_NAMESPACE}" \
+  kubectl port-forward --address 127.0.0.1 svc/ml-pipeline-ui -n "${KUBEFLOW_NAMESPACE}" \
     "${UI_PORT}:80" &>/dev/null &
   local pfpid=$!
   echo "${pfpid}" > "${PORTFWD_PID_FILE}"
@@ -609,7 +626,7 @@ start_port_forward() {
     success "Kubeflow Pipelines UI: http://localhost:${UI_PORT}"
   else
     warn "Port-forward process exited. You can start it manually:"
-    echo "  kubectl port-forward svc/ml-pipeline-ui -n ${KUBEFLOW_NAMESPACE} ${UI_PORT}:80"
+    echo "  kubectl port-forward --address 127.0.0.1 svc/ml-pipeline-ui -n ${KUBEFLOW_NAMESPACE} ${UI_PORT}:80"
   fi
   echo ""
 }
@@ -621,7 +638,7 @@ print_portfwd_helper() {
 # ─── Helper: paste into your shell or add to ~/.bashrc ───
 kfp-portfwd() {
   local ns="${KFP_NAMESPACE:-kubeflow}"
-  local port="${KFP_UI_PORT:-8080}"
+  local port="${KFP_UI_PORT:-8083}"
   local pidfile="/tmp/kfp-portforward.pid"
 
   # Kill existing
@@ -631,7 +648,7 @@ kfp-portfwd() {
   fi
 
   echo "Starting port-forward: localhost:${port} → ml-pipeline-ui (ns: ${ns})"
-  kubectl port-forward svc/ml-pipeline-ui -n "$ns" "${port}:80" &>/dev/null &
+  kubectl port-forward --address 127.0.0.1 svc/ml-pipeline-ui -n "$ns" "${port}:80" &>/dev/null &
   echo $! > "$pidfile"
   sleep 2
 

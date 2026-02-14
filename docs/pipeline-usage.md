@@ -49,14 +49,14 @@ Pipelines UI.
 
 ```bash
 # Port-forward the KFP UI (if running in a Kind / local cluster)
-kubectl port-forward svc/ml-pipeline-ui 8080:80 -n kubeflow
+kubectl port-forward --address 127.0.0.1 svc/ml-pipeline-ui 8083:80 -n kubeflow
 
 # Submit with defaults from pipeline_config.yaml
-python run_pipeline.py --host http://localhost:8080
+python run_pipeline.py --host http://localhost:8083
 
 # Or override parameters inline
 python run_pipeline.py \
-    --host http://localhost:8080 \
+    --host http://localhost:8083 \
     --experiment my-experiment \
     --repos https://github.com/kubeflow/website \
     --chunk-size 256 \
@@ -65,7 +65,7 @@ python run_pipeline.py \
 
 ### 3. Upload via the Pipelines UI
 
-1. Open `http://localhost:8080` in a browser.
+1. Open `http://localhost:8083` in a browser.
 2. Go to **Pipelines → Upload Pipeline**.
 3. Select the compiled YAML file.
 4. Click **Create Run**, fill in parameters, and start the run.
@@ -167,7 +167,7 @@ The pipeline graph is fully renderable in the KFP UI.  Each task reports
 
 ```bash
 python run_pipeline.py \
-    --host http://localhost:8080 \
+    --host http://localhost:8083 \
     --experiment docs-ingestion \
     --repos https://github.com/kubeflow/website \
     --chunk-size 512 \
@@ -179,7 +179,7 @@ python run_pipeline.py \
 
 ```
 [info] Submitting run 'docs-ingestion-20260212-143022' to experiment 'docs-ingestion'
-[info] KFP host: http://localhost:8080
+[info] KFP host: http://localhost:8083
 [info] Parameters:
          repos: ["https://github.com/kubeflow/website"]
          chunk_size: 512
@@ -192,7 +192,7 @@ python run_pipeline.py \
 
 [ok] Run created successfully!
      Run ID   : a1b2c3d4-e5f6-7890-abcd-ef1234567890
-     Run URL  : http://localhost:8080/#/runs/details/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+     Run URL  : http://localhost:8083/#/runs/details/a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 Monitor progress in the Kubeflow Pipelines UI.
 ```
@@ -233,7 +233,7 @@ Monitor progress in the Kubeflow Pipelines UI.
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| `ConnectionRefusedError` on submit | KFP API not reachable | Run `kubectl port-forward svc/ml-pipeline-ui 8080:80 -n kubeflow` |
+| `ConnectionRefusedError` on submit | KFP API not reachable | Run `kubectl port-forward --address 127.0.0.1 svc/ml-pipeline-ui 8083:80 -n kubeflow` |
 | CrawlDocs timeout | GitHub rate limiting | Add a GitHub token or reduce repos |
 | GenerateEmbeddings OOM | Model + data exceed memory | Lower `batch_size`, or increase memory limit |
 | Validation FAILED: count mismatch | Partial embedding failure | Check GenerateEmbeddings logs; retry the run |

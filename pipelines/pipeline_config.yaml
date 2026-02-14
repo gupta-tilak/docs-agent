@@ -14,7 +14,7 @@
 # Runtime settings (KFP cluster connection)
 # --------------------------------------------------------------------------
 runtime:
-  kfp_host: "http://localhost:8080"
+  kfp_host: "http://localhost:8083"
   namespace: "kubeflow"
   experiment_name: "docs-ingestion"
 
